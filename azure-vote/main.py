@@ -21,6 +21,9 @@ from opencensus.trace.samplers import ProbabilitySampler
 from opencensus.trace.tracer import Tracer
 from opencensus.ext.flask.flask_middleware import FlaskMiddleware
 
+from applicationinsights.flask.ext import AppInsights
+from applicationinsights import TelemetryClient
+
 
 app = Flask(__name__)
 
@@ -30,25 +33,25 @@ app.config.from_pyfile('config_file.cfg')
 # Logging
 logger = logging.getLogger(__name__)
 logger.addHandler(AzureLogHandler(
-    connection_string=app.config['INSTRUMENTATION_KEY'])
+    connection_string=app.config['INSTRUMENTATION_CONNECTIONSTRING'])
 )
 
 # Metrics
 exporter = metrics_exporter.new_metrics_exporter(
                enable_standard_metrics=True,
-               connection_string=app.config['INSTRUMENTATION_KEY'])
+               connection_string=app.config['INSTRUMENTATION_CONNECTIONSTRING'])
 
 # Tracing
 tracer = Tracer(
     exporter=AzureExporter(
-        connection_string=app.config['INSTRUMENTATION_KEY']),
+        connection_string=app.config['INSTRUMENTATION_CONNECTIONSTRING']),
     sampler=ProbabilitySampler(1.0),
 )
 
 # Requests
 middleware = FlaskMiddleware(
     app,
-    exporter=AzureExporter(connection_string=app.config['INSTRUMENTATION_KEY']),
+    exporter=AzureExporter(connection_string=app.config['INSTRUMENTATION_CONNECTIONSTRING']),
     sampler=ProbabilitySampler(rate=1.0),
 )
 
@@ -78,6 +81,9 @@ if app.config['SHOWHOST'] == "true":
 if not r.get(button1): r.set(button1,0)
 if not r.get(button2): r.set(button2,0)
 
+# Custom events
+appinsights = AppInsights(app)
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
 
@@ -87,7 +93,6 @@ def index():
         vote1 = r.get(button1).decode('utf-8')
         # TODO: use tracer object to trace cat vote
         tracer.span(name=button1)
-
         vote2 = r.get(button2).decode('utf-8')
         # TODO: use tracer object to trace dog vote
         tracer.span(name=button2)
@@ -99,20 +104,27 @@ def index():
 
         if request.form['vote'] == 'reset':
 
+            vote1 = r.get(button1).decode('utf-8')
+            vote2 = r.get(button2).decode('utf-8')
             # Empty table and return results
             r.set(button1,0)
-            r.set(button2,0)
-            vote1 = r.get(button1).decode('utf-8')
-            properties = {'custom_dimensions': {'Cats Vote': vote1}}
-            # TODO: use logger object to log cat vote
-            with tracer.span(name=vote1) as span:
-                logger.warning('cat vote', extra=properties)
 
-            vote2 = r.get(button2).decode('utf-8')
-            properties = {'custom_dimensions': {'Dogs Vote': vote2}}
-            # TODO: use logger object to log dog vote
-            with tracer.span(name=vote2) as span:
-                logger.warning('dog vote', extra=properties)
+            r.set(button2,0)
+
+            try:
+                if int(vote1) > 0:
+                    properties = {'custom_dimensions': {'Cats Vote': vote1}}
+                    # TODO: use logger object to log cat vote
+                    with tracer.span(name=vote1) as span:
+                        logger.warning('cat vote', extra=properties)
+
+                if int(vote2) > 0:
+                    properties = {'custom_dimensions': {'Dogs Vote': vote2}}
+                    # TODO: use logger object to log dog vote
+                    with tracer.span(name=vote2) as span:
+                        logger.warning('dog vote', extra=properties)
+            except ValueError as e:
+                logger.error("Error")
 
             return render_template("index.html", value1=int(vote1), value2=int(vote2), button1=button1, button2=button2, title=title)
 
@@ -120,11 +132,20 @@ def index():
 
             # Insert vote result into DB
             vote = request.form['vote']
-            r.incr(vote,1)
+            with tracer.span(name=vote) as span:
+                r.incr(vote, 1)
 
             # Get current values
             vote1 = r.get(button1).decode('utf-8')
             vote2 = r.get(button2).decode('utf-8')
+
+            telemetry_client = TelemetryClient(app.config['INSTRUMENTATION_KEY'])
+            if vote == button1:
+                telemetry_client.track_event('Cats vote')
+            else: 
+                telemetry_client.track_event('Dogs vote')
+
+            telemetry_client.flush()
 
             # Return results
             return render_template("index.html", value1=int(vote1), value2=int(vote2), button1=button1, button2=button2, title=title)
