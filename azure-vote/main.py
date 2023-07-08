@@ -21,8 +21,6 @@ from opencensus.trace.samplers import ProbabilitySampler
 from opencensus.trace.tracer import Tracer
 from opencensus.ext.flask.flask_middleware import FlaskMiddleware
 
-from applicationinsights.flask.ext import AppInsights
-from applicationinsights import TelemetryClient
 
 app = Flask(__name__)
 
