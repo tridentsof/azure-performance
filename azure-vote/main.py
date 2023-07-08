@@ -132,6 +132,9 @@ def index():
 
             # Insert vote result into DB
             vote = request.form['vote']
+            print("vote request: {0}".format(vote))
+            print("button1: ".format(button1))
+            print("button2: ".format(button2))
             with tracer.span(name=vote) as span:
                 r.incr(vote, 1)
 
@@ -139,10 +142,15 @@ def index():
             vote1 = r.get(button1).decode('utf-8')
             vote2 = r.get(button2).decode('utf-8')
 
+            print("vote1: ".format(vote1))
+            print("vote2: ".format(vote2))
+
             telemetry_client = TelemetryClient(app.config['INSTRUMENTATION_KEY'])
             if vote == button1:
+                print("in the cat vote case")
                 telemetry_client.track_event('Cats vote')
-            else: 
+            else:
+                print("in the dog vote case")
                 telemetry_client.track_event('Dogs vote')
 
             telemetry_client.flush()
